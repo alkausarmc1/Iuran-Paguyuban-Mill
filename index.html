@@ -71,11 +71,11 @@ const now=new Date(),CUR=(now.getFullYear()-2025)*12+now.getMonth()-9;
 const GN={staf:'Staf',abc:'Blok A B C',def:'Blok D E F'};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const $=s=>document.querySelector(s);
-let D=null,doc=null,canW=true,err='',tab='rekap',grp='all',per=0,q='',sel='',amt='',start=null,ready=false;
+let D=null,doc=null,canW=true,err='',tab='rekap',sub='iuran',grp='all',per=0,q='',sel='',amt='',start=null,ready=false;
 function warn(m){const e=$('#er');e.textContent=m;e.style.display=m?'block':'none'}
 const norm=o=>{if(Array.isArray(o.lama))o.lama=o.lama.map(r=>Array.isArray(r)?{b:r[0],m:r[1],k:r[2],s:r[3]}:r);return o};
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2800)}
-function save(nd){D=nd;render();try{const c=fdb.collection('iuran'),b=fdb.batch();b.set(c.doc('main'),nd);b.set(c.doc('publik'),{members:nd.members});return b.commit().then(()=>{warn('');toast('Tersimpan online ✓')}).catch(e=>warn('GAGAL menyimpan ke Firebase ('+(e.code||'error')+'). Data hanya tampil di layar ini dan hilang saat dimuat ulang. Cek Rules Firestore dan pastikan email login sama persis dengan email di Rules.'))}catch(e){warn('GAGAL menyimpan: '+(e.message||e))}}
+function save(nd){D=nd;render();try{const c=fdb.collection('iuran'),b=fdb.batch();b.set(c.doc('main'),nd);b.set(c.doc('publik'),pubDoc(nd));return b.commit().then(()=>{warn('');toast('Tersimpan online ✓')}).catch(e=>warn('GAGAL menyimpan ke Firebase ('+(e.code||'error')+'). Data hanya tampil di layar ini dan hilang saat dimuat ulang. Cek Rules Firestore dan pastikan email login sama persis dengan email di Rules.'))}catch(e){warn('GAGAL menyimpan: '+(e.message||e))}}
 // ==== ISI BAGIAN INI dengan konfigurasi dari Firebase (Project settings > Your apps > Web app) ====
 const FIREBASE_CONFIG={apiKey:"AIzaSyCPqTOD0TA02qdbXTsM6tA6cQ9cGHGvmoU",authDomain:"iuran-mill.firebaseapp.com",projectId:"iuran-mill",appId:"1:572228650053:web:f27e334bf038be27138f2c"};
 // ====================================================================================================
@@ -90,7 +90,7 @@ if(FIREBASE_CONFIG.apiKey!=='ISI'){
  firebase.initializeApp(FIREBASE_CONFIG);auth=firebase.auth();fdb=firebase.firestore();
  let synced=false;
  auth.onAuthStateChanged(u=>{user=u;tab='rekap';if(unsub){unsub();unsub=null}D=null;ready=false;
-  unsub=fdb.collection('iuran').doc(u?'main':'publik').onSnapshot(s=>{warn('');D=s.exists?s.data():null;ready=true;if(u&&D&&!synced){synced=true;fdb.collection('iuran').doc('publik').set({members:D.members}).catch(()=>{})}render()},e=>{err=e.message||e.code||'';warn('GAGAL membaca data ('+(e.code||'error')+'). Cek Rules Firestore dan pastikan email login sama persis dengan email di Rules.');ready=true;render()});
+  unsub=fdb.collection('iuran').doc(u?'main':'publik').onSnapshot(s=>{warn('');D=s.exists?s.data():null;ready=true;if(u&&D&&!synced){synced=true;fdb.collection('iuran').doc('publik').set(pubDoc(D)).catch(()=>{})}render()},e=>{err=e.message||e.code||'';warn('GAGAL membaca data ('+(e.code||'error')+'). Cek Rules Firestore dan pastikan email login sama persis dengan email di Rules.');ready=true;render()});
   render()});
 }else render();
 const TBP=[['rekap','Rekap'],['login','Login Pengurus']];
@@ -107,13 +107,14 @@ function render(){
  if(!user)tab='rekap';({rekap,input,kas,agt})[tab]();
 }
 function rekap(){
+ if(sub=='uang'){uang();return}
  const all=D.members,mx=Math.max(14,...all.flatMap(m=>m.paid));
  const yr=[[0,14,'Okt 2025 – Des 2026']];if(mx>14)yr.push([15,26,'2027']);if(mx>26)yr.push([27,38,'2028']);
  per=Math.min(per,yr.length-1);const[a,b]=yr[per];
  const ms=all.filter(m=>(grp=='all'||m.g==grp)&&(m.nama+' '+m.blok).toLowerCase().includes(q));
  const act=all.filter(m=>!m.st),paidNow=act.filter(m=>m.paid.includes(CUR)),belum=act.filter(m=>!m.paid.includes(CUR));
  const total=all.reduce((s,m)=>s+m.paid.length,0)*FEE;
- let h='<div class="cards"><div class="card"><b>'+rp(total)+'</b><span>Total iuran tercatat</span></div>'+
+ let h=subs()+'<div class="cards"><div class="card"><b>'+rp(total)+'</b><span>Total iuran tercatat</span></div>'+
  '<div class="card"><b>'+paidNow.length+' / '+act.length+'</b><span>Sudah bayar '+lab(CUR)+'</span></div>'+
  '<div class="card"><b>'+rp(paidNow.length*FEE)+'</b><span>Masuk '+lab(CUR)+'</span></div></div>';
  h+='<div class="bar"><input id="q" placeholder="Cari nama atau blok…" value="'+esc(q)+'">'+
@@ -141,7 +142,7 @@ function rekap(){
  $('#v').innerHTML=h;
  const qi=$('#q');qi.oninput=()=>{q=qi.value.toLowerCase();const p=qi.selectionStart;rekap();const n=$('#q');n.focus();n.setSelectionRange(p,p)};
  $('#per').onchange=e=>{per=+e.target.value;rekap()};
- document.querySelectorAll('[data-g]').forEach(x=>x.onclick=()=>{grp=x.dataset.g;rekap()});$('#dl').onclick=unduh;
+ document.querySelectorAll('[data-g]').forEach(x=>x.onclick=()=>{grp=x.dataset.g;rekap()});$('#dl').onclick=unduh;bindSubs();
 }
 function plan(m,n,s){const r=[];for(let i=s;r.length<n;i++)if(!m.paid.includes(i))r.push(i);return r}
 function input(){
@@ -191,26 +192,40 @@ function input(){
 }
 const ex=()=>D.exp||[],tm=()=>D.members.reduce((s,m)=>s+m.paid.length,0)*FEE;
 const mi=d=>{const[y,m]=d.split('-');return Math.max(0,(+y-2025)*12+(+m)-10)};
-const kmasuk=()=>(D.log||[]).reduce((s,l)=>s+l.total,0);
 const ti=t=>{const d=new Date(t);return Math.max(0,(d.getFullYear()-2025)*12+d.getMonth()-9)};
+const MB=()=>{const m={};if(D.log)D.log.forEach(l=>{const i=ti(l.t);m[i]=(m[i]||0)+l.total});else(D.mb||[]).forEach(o=>{m[o.i]=(m[o.i]||0)+o.v});return m};
+const pubDoc=d=>{const m={};(d.log||[]).forEach(l=>{const i=ti(l.t);m[i]=(m[i]||0)+l.total});return{members:d.members,awal:d.awal||0,lama:d.lama||[],exp:d.exp||[],mb:Object.entries(m).map(([i,v])=>({i:+i,v}))}};
 function sal(){
- const E=ex(),L=D.log||[],ids=[CUR,...E.map(e=>mi(e.tgl)),...L.map(l=>ti(l.t))],a=Math.min(...ids),b=Math.max(...ids),rows=[];let s=D.awal||0;
- for(let i=a;i<=b;i++){const m=L.filter(l=>ti(l.t)==i).reduce((x,l)=>x+l.total,0),k=E.filter(e=>mi(e.tgl)==i).reduce((x,e)=>x+e.total,0);s+=m-k;rows.push([lab(i),m,k,s])}
+ const E=ex(),A=norm({lama:D.lama||[]}).lama,M=MB(),ids=[CUR,A.length-1,...E.map(e=>mi(e.tgl)),...Object.keys(M).map(Number)],b=Math.max(...ids),a=A.length?0:Math.min(...ids.filter(x=>x>=0)),rows=[];let s=A.length?0:(D.awal||0);
+ for(let i=a;i<=b;i++){const L0=A[i],m=(L0?L0.m:0)+(M[i]||0),k=(L0?L0.k:0)+E.filter(e=>mi(e.tgl)==i).reduce((x,e)=>x+e.total,0);s+=m-k;rows.push([lab(i),m,k,s,i])}
  return rows}
-function lama(){const A=norm({lama:D.lama||[]}).lama;return '<h3>Rekap saldo lama (dari Excel)</h3>'+(A.length?'<div class="wrap"><table><thead><tr><th>Bulan</th><th>Masuk</th><th>Keluar</th><th>Saldo akhir</th></tr></thead><tbody>'+A.map(r=>'<tr><td style="text-align:left">'+esc(r.b)+'</td><td>'+rp(r.m)+'</td><td>'+rp(r.k)+'</td><td><b>'+rp(r.s)+'</b></td></tr>').join('')+'</tbody></table></div>':'<p class="s">Belum ada. Impor rekap-saldo-lama.json.</p>')+'<button class="chip" id="il" style="margin:8px 0">Impor rekap saldo lama (.json)</button><input type="file" id="fl2" accept=".json" hidden>'}
+const kmasuk=()=>sal().reduce((s,r)=>s+r[1],0);
+const subs=()=>'<div class="chips" style="margin-bottom:12px">'+[['iuran','Iuran per orang'],['uang','Keuangan']].map(([k,n])=>'<button class="chip'+(sub==k?' on':'')+'" data-s="'+k+'">'+n+'</button>').join('')+'</div>';
+const bindSubs=()=>document.querySelectorAll('[data-s]').forEach(x=>x.onclick=()=>{sub=x.dataset.s;rekap()});
+function uang(){
+ const E=ex(),A=norm({lama:D.lama||[]}).lama,rows=sal(),mk=rows.reduce((s,r)=>s+r[1],0),kl=rows.reduce((s,r)=>s+r[2],0),sisa=rows.length?rows[rows.length-1][3]:0,cur=rows.find(r=>r[4]==CUR)||[0,0,0,0,0],tg=d=>d.split('-').reverse().join('/');
+ let h=subs()+'<div class="cards">'+[['Total uang masuk',mk],['Total uang keluar',kl],['Uang sisa',sisa],['Masuk '+lab(CUR),cur[1]],['Keluar '+lab(CUR),cur[2]]].map(([n,v],i)=>'<div class="card"><b'+(i==2?' style="color:var(--'+(v<0?'rd':'ac')+')"':'')+'>'+rp(v)+'</b><span>'+n+'</span></div>').join('')+'</div>';
+ h+='<h3>Uang masuk &amp; keluar per bulan</h3><div class="wrap"><table><thead><tr><th>Bulan</th><th>Masuk</th><th>Keluar</th><th>Sisa uang</th></tr></thead><tbody>'+rows.map(r=>'<tr><td style="text-align:left">'+r[0]+'</td><td>'+rp(r[1])+'</td><td>'+(r[2]?rp(r[2]):'-')+'</td><td><b>'+rp(r[3])+'</b></td></tr>').join('')+'</tbody><tfoot><tr><td style="text-align:left">Total</td><td>'+rp(mk)+'</td><td>'+rp(kl)+'</td><td>'+rp(sisa)+'</td></tr></tfoot></table></div>';
+ const by={};E.forEach(e=>{(by[mi(e.tgl)]=by[mi(e.tgl)]||[]).push(e)});
+ h+='<h3>Pengeluaran per bulan</h3>'+(rows.filter(r=>r[2]>0).reverse().map(r=>{const it=(by[r[4]]||[]).slice().sort((x,y)=>x.tgl<y.tgl?-1:1),nl=A[r[4]]?A[r[4]].k:0;return '<details'+(r[4]==CUR?' open':'')+'><summary>'+r[0]+' · '+rp(r[2])+'</summary>'+(it.length?'<div class="wrap"><table><tbody>'+it.map(e=>'<tr><td>'+tg(e.tgl)+'</td><td style="text-align:left">'+esc(e.item)+'</td><td>'+rp(e.total)+'</td></tr>').join('')+'</tbody></table></div>':'')+(nl?'<p class="s">Termasuk '+rp(nl)+' dari rekap Excel lama (rincian item tidak tercatat).</p>':'')+'</details>'}).join('')||'<p class="s">Belum ada pengeluaran.</p>');
+ const L=E.slice().sort((x,y)=>x.tgl<y.tgl?1:-1),tot=L.reduce((s,e)=>s+e.total,0),lk=A.reduce((s,r)=>s+r.k,0);
+ h+='<h3>Semua pengeluaran</h3>'+(L.length?'<div class="wrap"><table><thead><tr><th>Tanggal</th><th>Item keperluan</th><th>Total</th></tr></thead><tbody>'+L.map(e=>'<tr><td>'+tg(e.tgl)+'</td><td style="text-align:left">'+esc(e.item)+'</td><td>'+rp(e.total)+'</td></tr>').join('')+'</tbody><tfoot><tr><td></td><td style="text-align:left">Total tercatat per item</td><td>'+rp(tot)+'</td></tr></tfoot></table></div>':'<p class="s">Belum ada pengeluaran yang dicatat per item.</p>')+(lk?'<p class="s">Selain itu ada pengeluaran '+rp(lk)+' (Okt 2025 – Okt 2026) dari rekap Excel lama tanpa rincian item.</p>':'');
+ $('#v').innerHTML=h;bindSubs();
+}
+function lama(){return '<h3>Impor data lama</h3><button class="chip" id="il" style="margin:8px 0">Impor rekap saldo lama (.json)</button><input type="file" id="fl2" accept=".json" hidden>'}
 function kas(){
  const E=ex(),aw=D.awal||0,rows=sal(),mk=kmasuk(),kl=E.reduce((s,e)=>s+e.total,0),sisa=rows.length?rows[rows.length-1][3]:aw;
  const td=new Date(now-now.getTimezoneOffset()*6e4).toISOString().slice(0,10),dis=canW?'':' disabled';
- let h='<div class="cards">'+[['Saldo awal',aw],['Total uang masuk (sejak pakai web)',mk],['Total uang keluar',kl]].map(([n,v])=>'<div class="card"><b>'+rp(v)+'</b><span>'+n+'</span></div>').join('')+'<div class="card"><b style="color:var(--'+(sisa<0?'rd':'ac')+')">'+rp(sisa)+'</b><span>Uang tersedia</span></div></div>';
+ let h='<div class="cards">'+[['Total uang masuk (semua)',mk],['Total uang keluar (semua)',rows.reduce((s,r)=>s+r[2],0)]].map(([n,v])=>'<div class="card"><b>'+rp(v)+'</b><span>'+n+'</span></div>').join('')+'<div class="card"><b style="color:var(--'+(sisa<0?'rd':'ac')+')">'+rp(sisa)+'</b><span>Uang tersedia</span></div></div>';
  h+='<div class="f"><b>Input pengeluaran</b><label>Tanggal<input id="ed" type="date" value="'+td+'"'+dis+'></label><label>Item keperluan<input id="ei" placeholder="contoh: beli galon, konsumsi 17-an…"'+dis+'></label><label>Total uang keluar (Rp)<input id="et" type="number" inputmode="numeric" min="0" placeholder="contoh: 150000"'+dis+'></label><button class="btn" id="es"'+dis+'>Simpan pengeluaran</button></div>';
  h+='<button class="btn dl" id="dl">⬇ Unduh Rekap (Excel)</button><h3>Rincian pengeluaran</h3>';
  const L=E.slice().sort((a,b)=>a.tgl<b.tgl?1:-1);
  h+='<div class="wrap"><table><thead><tr><th>Tanggal</th><th>Item keperluan</th><th>Total</th><th></th></tr></thead><tbody>'+(L.map(e=>'<tr><td>'+e.tgl.split('-').reverse().join('/')+'</td><td style="text-align:left">'+esc(e.item)+'</td><td>'+rp(e.total)+'</td><td>'+(canW?'<button class="lnk" data-x="'+e.t+'">Hapus</button>':'')+'</td></tr>').join('')||'<tr><td colspan="4" class="empty">Belum ada pengeluaran</td></tr>')+'</tbody><tfoot><tr><td></td><td style="text-align:left">Total keluar</td><td>'+rp(kl)+'</td><td></td></tr></tfoot></table></div>';
  h+='<h3>Rekap per bulan</h3><div class="wrap"><table><thead><tr><th>Bulan</th><th>Masuk</th><th>Keluar</th><th>Saldo akhir</th></tr></thead><tbody>'+rows.map(r=>'<tr><td style="text-align:left">'+r[0]+'</td><td>'+rp(r[1])+'</td><td>'+(r[2]?rp(r[2]):'-')+'</td><td><b>'+rp(r[3])+'</b></td></tr>').join('')+'</tbody></table></div>';
- h+=lama()+'<p class="s">Uang masuk = total uang yang diinput di tab Input Iuran sejak web dipakai. Saldo awal mengikuti saldo akhir di rekap Excel lama.</p><div class="f"><label>Saldo awal (Rp)<input id="aw" type="number" value="'+aw+'"'+dis+'></label><button class="btn" id="sa"'+dis+'>Ubah saldo awal</button></div>';
+ h+=lama()+'<p class="s">Uang masuk dan keluar = rekap Excel lama (Okt 2025 – Okt 2026) ditambah semua input baru. Uang sisa = total masuk − total keluar.</p>'+((D.lama||[]).length?'':'<div class="f"><label>Saldo awal (Rp)<input id="aw" type="number" value="'+aw+'"'+dis+'></label><button class="btn" id="sa"'+dis+'>Ubah saldo awal</button></div>');
  $('#v').innerHTML=h;$('#dl').onclick=unduh;$('#il').onclick=()=>$('#fl2').click();$('#fl2').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=norm(JSON.parse(r.result));if(!Array.isArray(o.lama))throw 0;const nd=structuredClone(D);nd.lama=o.lama;nd.awal=+o.awal||0;save(nd)}catch(_){toast('File tidak valid')}};r.readAsText(f);e.target.value=''};
  $('#es').onclick=()=>{const it=$('#ei').value.trim(),tt=Math.round(+$('#et').value),tg=$('#ed').value;if(!it||!(tt>0)||!tg){toast('Lengkapi tanggal, item, dan total');return}const nd=structuredClone(D);nd.exp=[...(nd.exp||[]),{t:Date.now(),tgl:tg,item:it,total:tt}];save(nd);toast('Pengeluaran tersimpan')};
- $('#sa').onclick=()=>{const nd=structuredClone(D);nd.awal=Math.round(+$('#aw').value)||0;save(nd);toast('Saldo awal diubah')};
+ if($('#sa'))$('#sa').onclick=()=>{const nd=structuredClone(D);nd.awal=Math.round(+$('#aw').value)||0;save(nd);toast('Saldo awal diubah')};
  document.querySelectorAll('[data-x]').forEach(x=>x.onclick=()=>{const nd=structuredClone(D),e=nd.exp.find(z=>z.t==x.dataset.x);if(!e||!confirm('Hapus pengeluaran "'+e.item+'"?'))return;nd.exp=nd.exp.filter(z=>z!==e);save(nd)});
 }
 function agt(){
@@ -225,7 +240,7 @@ async function unduh(){
  const H=['No','Nama','Blok','Kelompok','Status'];for(let i=0;i<=mx;i++)H.push(lab(i));H.push('Jumlah (Rp)');
  const R=[H,...D.members.map((m,k)=>[k+1,m.nama,m.blok,GN[m.g],m.st||'',...Array.from({length:mx+1},(_,i)=>m.paid.includes(i)?FEE:''),m.paid.length*FEE])];
  const P=[['Tanggal','Item keperluan','Total (Rp)'],...E.map(e=>[e.tgl,e.item,e.total]),['','TOTAL',kl]];
- const S=[['Bulan','Masuk','Keluar','Saldo akhir'],['Saldo awal','','',aw],...rows,[],['Total uang masuk',kmasuk()],['Total uang keluar',kl],['Uang tersedia',rows.length?rows[rows.length-1][3]:aw]];
+ const S=[['Bulan','Masuk','Keluar','Saldo akhir'],['Saldo awal','','',aw],...rows.map(r=>r.slice(0,4)),[],['Total uang masuk',kmasuk()],['Total uang keluar',rows.reduce((s,r)=>s+r[2],0)],['Uang tersedia',rows.length?rows[rows.length-1][3]:aw]];
  const d=new Date(now-now.getTimezoneOffset()*6e4).toISOString().slice(0,10),csv=a=>'\ufeff'+a.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
  try{
   
