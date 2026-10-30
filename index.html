@@ -71,7 +71,7 @@ const now=new Date(),CUR=(now.getFullYear()-2025)*12+now.getMonth()-9;
 const GN={staf:'Staf',abc:'Blok A B C',def:'Blok D E F'};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const $=s=>document.querySelector(s);
-let D=null,doc=null,canW=true,err='',tab='rekap',sub='iuran',grp='all',per=0,q='',sel='',amt='',start=null,ready=false;
+let D=null,doc=null,canW=true,err='',tab='rekap',sub='iuran',aid='',grp='all',per=0,q='',sel='',amt='',start=null,ready=false;
 function warn(m){const e=$('#er');e.textContent=m;e.style.display=m?'block':'none'}
 const norm=o=>{if(Array.isArray(o.lama))o.lama=o.lama.map(r=>Array.isArray(r)?{b:r[0],m:r[1],k:r[2],s:r[3]}:r);return o};
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2800)}
@@ -228,12 +228,27 @@ function kas(){
  if($('#sa'))$('#sa').onclick=()=>{const nd=structuredClone(D);nd.awal=Math.round(+$('#aw').value)||0;save(nd);toast('Saldo awal diubah')};
  document.querySelectorAll('[data-x]').forEach(x=>x.onclick=()=>{const nd=structuredClone(D),e=nd.exp.find(z=>z.t==x.dataset.x);if(!e||!confirm('Hapus pengeluaran "'+e.item+'"?'))return;nd.exp=nd.exp.filter(z=>z!==e);save(nd)});
 }
+function panel(){
+ const m=D.members.find(x=>x.id==aid);if(!m)return '';
+ const mx=Math.max(38,...m.paid),ot=D.members.filter(x=>x.id!=m.id);
+ return '<div class="f" style="max-width:none;margin-bottom:14px"><b>Iuran: '+esc(m.nama)+' ('+esc(m.blok)+') · '+m.paid.length+' bulan · '+rp(m.paid.length*FEE)+'</b><p class="s" style="margin:0">Klik bulan untuk menandai sudah atau belum bayar (hijau = sudah). Perubahan langsung tersimpan.</p><div class="chips">'+Array.from({length:mx+1},(_,i)=>'<button class="chip'+(m.paid.includes(i)?' on':'')+'" data-mo="'+i+'">'+lab(i)+'</button>').join('')+'</div><label>Pindahkan semua iuran ke penghuni lain<select id="mv"><option value="">— pilih penghuni tujuan —</option>'+ot.map(x=>'<option value="'+x.id+'">'+esc(x.nama)+' ('+esc(x.blok)+')</option>').join('')+'</select></label><label style="font-weight:400;display:flex;gap:8px;align-items:center"><input type="checkbox" id="mvd" style="width:auto"> Hapus penghuni asal setelah dipindah</label><div style="display:flex;gap:8px"><button class="btn" id="mvb">Pindahkan iuran</button><button class="chip" id="cl">Tutup</button></div></div>'}
 function agt(){
  const dis=canW?'':' disabled';
- const h='<p class="s">Ubah nama penghuni atau blok/rumah di sini. Perubahan tersimpan otomatis setelah selesai mengetik. Anggota baru ditambah lewat tab Input Iuran.</p><div class="wrap"><table><thead><tr><th>Nama penghuni</th><th>Blok / rumah</th><th>Kelompok</th><th>Status</th><th></th></tr></thead><tbody>'+D.members.map(m=>'<tr><td><input data-i="'+m.id+'" data-f="nama" value="'+esc(m.nama)+'"'+dis+'></td><td><input data-i="'+m.id+'" data-f="blok" value="'+esc(m.blok)+'"'+dis+'></td><td><select data-i="'+m.id+'" data-f="g"'+dis+'>'+Object.entries(GN).map(([k,v])=>'<option value="'+k+'"'+(m.g==k?' selected':'')+'>'+v+'</option>').join('')+'</select></td><td><input data-i="'+m.id+'" data-f="st" placeholder="aktif" value="'+esc(m.st)+'"'+dis+'></td><td>'+(canW?'<button class="lnk" data-d="'+m.id+'">Hapus</button>':'')+'</td></tr>').join('')+'</tbody></table></div>';
+ const h=panel()+'<p class="s">Ubah nama penghuni atau blok/rumah di sini, atau tekan Atur iuran untuk mengubah bulan yang sudah dibayar dan memindahkan iuran ke penghuni lain. Perubahan tersimpan otomatis setelah selesai mengetik. Anggota baru ditambah lewat tab Input Iuran.</p><div class="wrap"><table><thead><tr><th>Nama penghuni</th><th>Blok / rumah</th><th>Kelompok</th><th>Status</th><th>Iuran</th><th></th></tr></thead><tbody>'+D.members.map(m=>'<tr><td><input data-i="'+m.id+'" data-f="nama" value="'+esc(m.nama)+'"'+dis+'></td><td><input data-i="'+m.id+'" data-f="blok" value="'+esc(m.blok)+'"'+dis+'></td><td><select data-i="'+m.id+'" data-f="g"'+dis+'>'+Object.entries(GN).map(([k,v])=>'<option value="'+k+'"'+(m.g==k?' selected':'')+'>'+v+'</option>').join('')+'</select></td><td><input data-i="'+m.id+'" data-f="st" placeholder="aktif" value="'+esc(m.st)+'"'+dis+'></td><td><button class="chip" data-ai="'+m.id+'">Atur iuran ('+m.paid.length+')</button></td><td>'+(canW?'<button class="lnk" data-d="'+m.id+'">Hapus</button>':'')+'</td></tr>').join('')+'</tbody></table></div>';
  $('#v').innerHTML=h;
- document.querySelectorAll('[data-f]').forEach(x=>x.onchange=()=>{const v=x.value.trim();if(x.dataset.f=='nama'&&!v){toast('Nama tidak boleh kosong');render();return}const nd=structuredClone(D);nd.members.find(z=>z.id==x.dataset.i)[x.dataset.f]=v;save(nd);toast('Tersimpan')});
- document.querySelectorAll('[data-d]').forEach(x=>x.onclick=()=>{const m=D.members.find(z=>z.id==x.dataset.d);if(!confirm('Hapus '+m.nama+'? Riwayat iuran orang ini ikut terhapus.'))return;const nd=structuredClone(D);nd.members=nd.members.filter(z=>z.id!=m.id);save(nd)});
+ document.querySelectorAll('[data-f]').forEach(x=>x.onchange=()=>{const v=x.value.trim();if(x.dataset.f=='nama'&&!v){toast('Nama tidak boleh kosong');render();return}const nd=structuredClone(D),mm=nd.members.find(z=>z.id==x.dataset.i);mm[x.dataset.f]=v;if(x.dataset.f=='nama')(nd.log||[]).forEach(l=>{if(l.id==mm.id)l.nama=v});save(nd);toast('Tersimpan')});
+ document.querySelectorAll('[data-d]').forEach(x=>x.onclick=()=>{const m=D.members.find(z=>z.id==x.dataset.d);if(!confirm('Hapus '+m.nama+'? Riwayat iuran orang ini ikut terhapus.'))return;const nd=structuredClone(D);nd.members=nd.members.filter(z=>z.id!=m.id);if(aid==m.id)aid='';save(nd)});
+ document.querySelectorAll('[data-ai]').forEach(x=>x.onclick=()=>{aid=x.dataset.ai;agt();window.scrollTo(0,0)});
+ document.querySelectorAll('[data-mo]').forEach(x=>x.onclick=()=>{const i=+x.dataset.mo,nd=structuredClone(D),m=nd.members.find(z=>z.id==aid);m.paid=m.paid.includes(i)?m.paid.filter(v=>v!=i):[...m.paid,i].sort((a,b)=>a-b);save(nd)});
+ if($('#cl'))$('#cl').onclick=()=>{aid='';agt()};
+ if($('#mvb'))$('#mvb').onclick=()=>{
+  const tid=$('#mv').value,del=$('#mvd').checked;if(!tid){toast('Pilih penghuni tujuan dulu');return}
+  const nd=structuredClone(D),s=nd.members.find(z=>z.id==aid),t=nd.members.find(z=>z.id==tid),dup=s.paid.filter(i=>t.paid.includes(i)).length;
+  if(!confirm('Pindahkan '+s.paid.length+' bulan iuran dari '+s.nama+' ('+s.blok+') ke '+t.nama+' ('+t.blok+')?'+(dup?'\n'+dup+' bulan sudah ada di tujuan dan tidak digandakan.':'')))return;
+  t.paid=[...new Set([...t.paid,...s.paid])].sort((a,b)=>a-b);s.paid=[];
+  (nd.log||[]).forEach(l=>{if(l.id==s.id){l.id=t.id;l.nama=t.nama}});
+  if(del){nd.members=nd.members.filter(z=>z.id!=s.id);aid=t.id}
+  save(nd);toast('Iuran dipindahkan ke '+t.nama)};
 }
 async function unduh(){
  const mx=Math.max(14,...D.members.flatMap(m=>m.paid)),E=ex().slice().sort((a,b)=>a.tgl<b.tgl?-1:1),rows=sal(),aw=D.awal||0,kl=E.reduce((s,e)=>s+e.total,0);
