@@ -71,7 +71,7 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 const $=s=>document.querySelector(s);
 let D=null,doc=null,canW=true,err='',tab='rekap',grp='all',per=0,q='',sel='',amt='',start=null,ready=false;
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2800)}
-function save(nd){D=nd;render();fdb.collection('iuran').doc('main').set(nd).catch(e=>toast('Gagal menyimpan: '+(e.message||e.code||'error')))}
+function save(nd){D=nd;render();const c=fdb.collection('iuran'),b=fdb.batch();b.set(c.doc('main'),nd);b.set(c.doc('publik'),{members:nd.members});b.commit().catch(e=>toast('Gagal menyimpan: '+(e.message||e.code||'error')))}
 // ==== ISI BAGIAN INI dengan konfigurasi dari Firebase (Project settings > Your apps > Web app) ====
 const FIREBASE_CONFIG={apiKey:"AIzaSyCPqTOD0TA02qdbXTsM6tA6cQ9cGHGvmoU",authDomain:"iuran-mill.firebaseapp.com",projectId:"iuran-mill",appId:"1:572228650053:web:f27e334bf038be27138f2c"};
 // ====================================================================================================
@@ -84,20 +84,23 @@ $('#fl').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileRea
 $('#lo').onclick=()=>auth&&auth.signOut();
 if(FIREBASE_CONFIG.apiKey!=='ISI'){
  firebase.initializeApp(FIREBASE_CONFIG);auth=firebase.auth();fdb=firebase.firestore();
- auth.onAuthStateChanged(u=>{user=u;if(unsub){unsub();unsub=null}D=null;ready=!u;
-  if(u)unsub=fdb.collection('iuran').doc('main').onSnapshot(s=>{D=s.exists?s.data():null;ready=true;render()},e=>{err=e.message;ready=true;render()});
+ let synced=false;
+ auth.onAuthStateChanged(u=>{user=u;tab='rekap';if(unsub){unsub();unsub=null}D=null;ready=false;
+  unsub=fdb.collection('iuran').doc(u?'main':'publik').onSnapshot(s=>{D=s.exists?s.data():null;ready=true;if(u&&D&&!synced){synced=true;fdb.collection('iuran').doc('publik').set({members:D.members}).catch(()=>{})}render()},e=>{err=e.message||e.code||'';ready=true;render()});
   render()});
 }else render();
+const TBP=[['rekap','Rekap'],['login','Login Pengurus']];
 const TB=[['rekap','Rekap'],['input','Input Iuran'],['kas','Pengeluaran & Saldo'],['agt','Anggota']];
 function render(){
- $('#tb').innerHTML=!user?'':TB.map(([k,n])=>'<button data-t="'+k+'" class="'+(tab==k?'on':'')+'">'+n+'</button>').join('');
+ $('#ft').style.display=user?'flex':'none';
+ $('#tb').innerHTML=(user?TB:TBP).map(([k,n])=>'<button data-t="'+k+'" class="'+(tab==k?'on':'')+'">'+n+'</button>').join('');
  document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{tab=b.dataset.t;render()});
  const v=$('#v');
  if(!auth){v.innerHTML='<div class="empty">Konfigurasi Firebase belum diisi. Buka index.html dan isi FIREBASE_CONFIG.</div>';return}
- if(!user){v.innerHTML='<div class="f" style="margin:20px auto"><b>Masuk</b><label>Email<input id="le" type="email" autocomplete="username"></label><label>Password<input id="lp" type="password" autocomplete="current-password"></label><button class="btn" id="lb">Masuk</button></div>';const go=()=>auth.signInWithEmailAndPassword($('#le').value.trim(),$('#lp').value).catch(()=>toast('Email atau password salah'));$('#lb').onclick=go;$('#lp').onkeydown=e=>{if(e.key=='Enter')go()};return}
+ if(!user&&tab=='login'){v.innerHTML='<div class="f" style="margin:20px auto"><b>Masuk</b><label>Email<input id="le" type="email" autocomplete="username"></label><label>Password<input id="lp" type="password" autocomplete="current-password"></label><button class="btn" id="lb">Masuk</button></div>';const go=()=>auth.signInWithEmailAndPassword($('#le').value.trim(),$('#lp').value).catch(()=>toast('Email atau password salah'));$('#lb').onclick=go;$('#lp').onkeydown=e=>{if(e.key=='Enter')go()};return}
  if(!ready){v.innerHTML='<div class="empty">Memuat data…</div>';return}
- if(!D){v.innerHTML='<div class="empty"><p>Belum ada data online. Impor data-awal.json (cukup sekali).</p><button class="btn" id="e1">Impor data awal (.json)</button> <button class="chip" id="e2">Mulai dari kosong</button></div>';$('#e1').onclick=()=>$('#fl').click();$('#e2').onclick=()=>save({members:[],log:[],exp:[]});return}
- ({rekap,input,kas,agt})[tab]();
+ if(!D){if(!user){v.innerHTML='<div class="empty">Data rekap belum tersedia.'+(err?' ('+esc(err)+')':'')+'</div>';return}v.innerHTML='<div class="empty"><p>Belum ada data online. Impor data-awal.json (cukup sekali).</p><button class="btn" id="e1">Impor data awal (.json)</button> <button class="chip" id="e2">Mulai dari kosong</button></div>';$('#e1').onclick=()=>$('#fl').click();$('#e2').onclick=()=>save({members:[],log:[],exp:[]});return}
+ if(!user)tab='rekap';({rekap,input,kas,agt})[tab]();
 }
 function rekap(){
  const all=D.members,mx=Math.max(14,...all.flatMap(m=>m.paid));
@@ -224,7 +227,7 @@ async function unduh(){
   
   try{
    if(!window.XLSX)throw{code:'rejected_extension'};
-   const wb=XLSX.utils.book_new();[['Rekap Iuran',R],['Pengeluaran',P],['Saldo',S],['Rekap Lama',[['Bulan','Masuk','Keluar','Saldo akhir'],...(D.lama||[])]]].forEach(([n,a])=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(a),n));
+   const wb=XLSX.utils.book_new();[['Rekap Iuran',R],...(user?[['Pengeluaran',P],['Saldo',S],['Rekap Lama',[['Bulan','Masuk','Keluar','Saldo akhir'],...(D.lama||[])]]]:[])].forEach(([n,a])=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(a),n));
    simpan('rekap-iuran-'+d+'.xlsx',XLSX.write(wb,{type:'array',bookType:'xlsx'}));
   }catch(e){
    if(e&&(e.code=='rejected_extension'||e.code=='extension_not_enabled')){simpan('rekap-iuran-'+d+'.csv',csv(R))}else throw e;
