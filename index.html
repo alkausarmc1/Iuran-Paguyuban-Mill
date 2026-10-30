@@ -47,12 +47,14 @@ tfoot td{font-weight:700;background:var(--hd)}tfoot td.n{background:var(--hd)}
 details{margin:10px 0}summary{cursor:pointer;font-weight:600}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:10px 16px;border-radius:99px;display:none;z-index:9}
 #ft{margin-top:26px;padding-top:14px;border-top:1px solid var(--ln);display:flex;flex-wrap:wrap;gap:8px;align-items:center}#ft .s{flex-basis:100%;margin:2px 0 0;color:var(--mu);font-size:12px}
+.er{display:none;margin:0 0 12px;padding:10px 12px;border-radius:10px;background:var(--rdb);color:var(--rd);font-weight:600}
 .empty{padding:24px;text-align:center;color:var(--mu)}
 </style></head>
 <body><main>
 <h1>Iuran Paguyuban Mill</h1>
 <p class="sub">Rekap iuran bulanan · Rp 10.000 per bulan</p>
 <div class="tabs" id="tb"></div>
+<div id="er" class="er"></div>
 <div id="v"></div>
 <div id="ft"></div>
 <div id="toast"></div>
@@ -70,29 +72,31 @@ const GN={staf:'Staf',abc:'Blok A B C',def:'Blok D E F'};
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const $=s=>document.querySelector(s);
 let D=null,doc=null,canW=true,err='',tab='rekap',grp='all',per=0,q='',sel='',amt='',start=null,ready=false;
+function warn(m){const e=$('#er');e.textContent=m;e.style.display=m?'block':'none'}
+const norm=o=>{if(Array.isArray(o.lama))o.lama=o.lama.map(r=>Array.isArray(r)?{b:r[0],m:r[1],k:r[2],s:r[3]}:r);return o};
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2800)}
-function save(nd){D=nd;render();const c=fdb.collection('iuran'),b=fdb.batch();b.set(c.doc('main'),nd);b.set(c.doc('publik'),{members:nd.members});b.commit().catch(e=>toast('Gagal menyimpan: '+(e.message||e.code||'error')))}
+function save(nd){D=nd;render();try{const c=fdb.collection('iuran'),b=fdb.batch();b.set(c.doc('main'),nd);b.set(c.doc('publik'),{members:nd.members});return b.commit().then(()=>{warn('');toast('Tersimpan online ✓')}).catch(e=>warn('GAGAL menyimpan ke Firebase ('+(e.code||'error')+'). Data hanya tampil di layar ini dan hilang saat dimuat ulang. Cek Rules Firestore dan pastikan email login sama persis dengan email di Rules.'))}catch(e){warn('GAGAL menyimpan: '+(e.message||e))}}
 // ==== ISI BAGIAN INI dengan konfigurasi dari Firebase (Project settings > Your apps > Web app) ====
 const FIREBASE_CONFIG={apiKey:"AIzaSyCPqTOD0TA02qdbXTsM6tA6cQ9cGHGvmoU",authDomain:"iuran-mill.firebaseapp.com",projectId:"iuran-mill",appId:"1:572228650053:web:f27e334bf038be27138f2c"};
 // ====================================================================================================
 let fdb=null,auth=null,user=null,unsub=null;
 function simpan(n,data){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data]));a.download=n;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000)}
-$('#ft').innerHTML='<button class="chip" id="bk">Simpan cadangan (.json)</button><button class="chip" id="rs">Impor cadangan</button><input type="file" id="fl" accept=".json,application/json" hidden><button class="chip" id="lo">Keluar</button><span class="s">Data tersimpan online dan dipakai bersama. Simpan cadangan (.json) sesekali.</span>';
+$('#ft').innerHTML='<button class="chip" id="bk">Simpan cadangan (.json)</button><button class="chip" id="rs">Impor cadangan</button><input type="file" id="fl" accept=".json,application/json" hidden><button class="chip" id="lo">Keluar</button><span class="s" id="me"></span><span class="s">Data tersimpan online dan dipakai bersama. Simpan cadangan (.json) sesekali.</span>';
 $('#rs').onclick=()=>$('#fl').click();
 $('#bk').onclick=()=>{if(!D){toast('Belum ada data');return}simpan('cadangan-iuran-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(D))};
-$('#fl').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result);if(!Array.isArray(o.members))throw 0;if(D&&D.members.length&&!confirm('Data di perangkat ini akan diganti. Lanjut?'))return;save(o);toast('Data berhasil diimpor')}catch(_){toast('File tidak valid')}};r.readAsText(f);e.target.value=''};
+$('#fl').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=norm(JSON.parse(r.result));if(!Array.isArray(o.members))throw 0;if(D&&D.members.length&&!confirm('Data di perangkat ini akan diganti. Lanjut?'))return;save(o)}catch(_){toast('File tidak valid')}};r.readAsText(f);e.target.value=''};
 $('#lo').onclick=()=>auth&&auth.signOut();
 if(FIREBASE_CONFIG.apiKey!=='ISI'){
  firebase.initializeApp(FIREBASE_CONFIG);auth=firebase.auth();fdb=firebase.firestore();
  let synced=false;
  auth.onAuthStateChanged(u=>{user=u;tab='rekap';if(unsub){unsub();unsub=null}D=null;ready=false;
-  unsub=fdb.collection('iuran').doc(u?'main':'publik').onSnapshot(s=>{D=s.exists?s.data():null;ready=true;if(u&&D&&!synced){synced=true;fdb.collection('iuran').doc('publik').set({members:D.members}).catch(()=>{})}render()},e=>{err=e.message||e.code||'';ready=true;render()});
+  unsub=fdb.collection('iuran').doc(u?'main':'publik').onSnapshot(s=>{warn('');D=s.exists?s.data():null;ready=true;if(u&&D&&!synced){synced=true;fdb.collection('iuran').doc('publik').set({members:D.members}).catch(()=>{})}render()},e=>{err=e.message||e.code||'';warn('GAGAL membaca data ('+(e.code||'error')+'). Cek Rules Firestore dan pastikan email login sama persis dengan email di Rules.');ready=true;render()});
   render()});
 }else render();
 const TBP=[['rekap','Rekap'],['login','Login Pengurus']];
 const TB=[['rekap','Rekap'],['input','Input Iuran'],['kas','Pengeluaran & Saldo'],['agt','Anggota']];
 function render(){
- $('#ft').style.display=user?'flex':'none';
+ $('#ft').style.display=user?'flex':'none';$('#me').textContent=user?'Masuk sebagai '+user.email:'';
  $('#tb').innerHTML=(user?TB:TBP).map(([k,n])=>'<button data-t="'+k+'" class="'+(tab==k?'on':'')+'">'+n+'</button>').join('');
  document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{tab=b.dataset.t;render()});
  const v=$('#v');
@@ -193,7 +197,7 @@ function sal(){
  const E=ex(),L=D.log||[],ids=[CUR,...E.map(e=>mi(e.tgl)),...L.map(l=>ti(l.t))],a=Math.min(...ids),b=Math.max(...ids),rows=[];let s=D.awal||0;
  for(let i=a;i<=b;i++){const m=L.filter(l=>ti(l.t)==i).reduce((x,l)=>x+l.total,0),k=E.filter(e=>mi(e.tgl)==i).reduce((x,e)=>x+e.total,0);s+=m-k;rows.push([lab(i),m,k,s])}
  return rows}
-function lama(){const A=D.lama||[];return '<h3>Rekap saldo lama (dari Excel)</h3>'+(A.length?'<div class="wrap"><table><thead><tr><th>Bulan</th><th>Masuk</th><th>Keluar</th><th>Saldo akhir</th></tr></thead><tbody>'+A.map(r=>'<tr><td style="text-align:left">'+esc(r[0])+'</td><td>'+rp(r[1])+'</td><td>'+rp(r[2])+'</td><td><b>'+rp(r[3])+'</b></td></tr>').join('')+'</tbody></table></div>':'<p class="s">Belum ada. Impor rekap-saldo-lama.json.</p>')+'<button class="chip" id="il" style="margin:8px 0">Impor rekap saldo lama (.json)</button><input type="file" id="fl2" accept=".json" hidden>'}
+function lama(){const A=norm({lama:D.lama||[]}).lama;return '<h3>Rekap saldo lama (dari Excel)</h3>'+(A.length?'<div class="wrap"><table><thead><tr><th>Bulan</th><th>Masuk</th><th>Keluar</th><th>Saldo akhir</th></tr></thead><tbody>'+A.map(r=>'<tr><td style="text-align:left">'+esc(r.b)+'</td><td>'+rp(r.m)+'</td><td>'+rp(r.k)+'</td><td><b>'+rp(r.s)+'</b></td></tr>').join('')+'</tbody></table></div>':'<p class="s">Belum ada. Impor rekap-saldo-lama.json.</p>')+'<button class="chip" id="il" style="margin:8px 0">Impor rekap saldo lama (.json)</button><input type="file" id="fl2" accept=".json" hidden>'}
 function kas(){
  const E=ex(),aw=D.awal||0,rows=sal(),mk=kmasuk(),kl=E.reduce((s,e)=>s+e.total,0),sisa=rows.length?rows[rows.length-1][3]:aw;
  const td=new Date(now-now.getTimezoneOffset()*6e4).toISOString().slice(0,10),dis=canW?'':' disabled';
@@ -204,7 +208,7 @@ function kas(){
  h+='<div class="wrap"><table><thead><tr><th>Tanggal</th><th>Item keperluan</th><th>Total</th><th></th></tr></thead><tbody>'+(L.map(e=>'<tr><td>'+e.tgl.split('-').reverse().join('/')+'</td><td style="text-align:left">'+esc(e.item)+'</td><td>'+rp(e.total)+'</td><td>'+(canW?'<button class="lnk" data-x="'+e.t+'">Hapus</button>':'')+'</td></tr>').join('')||'<tr><td colspan="4" class="empty">Belum ada pengeluaran</td></tr>')+'</tbody><tfoot><tr><td></td><td style="text-align:left">Total keluar</td><td>'+rp(kl)+'</td><td></td></tr></tfoot></table></div>';
  h+='<h3>Rekap per bulan</h3><div class="wrap"><table><thead><tr><th>Bulan</th><th>Masuk</th><th>Keluar</th><th>Saldo akhir</th></tr></thead><tbody>'+rows.map(r=>'<tr><td style="text-align:left">'+r[0]+'</td><td>'+rp(r[1])+'</td><td>'+(r[2]?rp(r[2]):'-')+'</td><td><b>'+rp(r[3])+'</b></td></tr>').join('')+'</tbody></table></div>';
  h+=lama()+'<p class="s">Uang masuk = total uang yang diinput di tab Input Iuran sejak web dipakai. Saldo awal mengikuti saldo akhir di rekap Excel lama.</p><div class="f"><label>Saldo awal (Rp)<input id="aw" type="number" value="'+aw+'"'+dis+'></label><button class="btn" id="sa"'+dis+'>Ubah saldo awal</button></div>';
- $('#v').innerHTML=h;$('#dl').onclick=unduh;$('#il').onclick=()=>$('#fl2').click();$('#fl2').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result);if(!Array.isArray(o.lama))throw 0;const nd=structuredClone(D);nd.lama=o.lama;nd.awal=+o.awal||0;save(nd);toast('Rekap saldo lama diimpor')}catch(_){toast('File tidak valid')}};r.readAsText(f);e.target.value=''};
+ $('#v').innerHTML=h;$('#dl').onclick=unduh;$('#il').onclick=()=>$('#fl2').click();$('#fl2').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=norm(JSON.parse(r.result));if(!Array.isArray(o.lama))throw 0;const nd=structuredClone(D);nd.lama=o.lama;nd.awal=+o.awal||0;save(nd)}catch(_){toast('File tidak valid')}};r.readAsText(f);e.target.value=''};
  $('#es').onclick=()=>{const it=$('#ei').value.trim(),tt=Math.round(+$('#et').value),tg=$('#ed').value;if(!it||!(tt>0)||!tg){toast('Lengkapi tanggal, item, dan total');return}const nd=structuredClone(D);nd.exp=[...(nd.exp||[]),{t:Date.now(),tgl:tg,item:it,total:tt}];save(nd);toast('Pengeluaran tersimpan')};
  $('#sa').onclick=()=>{const nd=structuredClone(D);nd.awal=Math.round(+$('#aw').value)||0;save(nd);toast('Saldo awal diubah')};
  document.querySelectorAll('[data-x]').forEach(x=>x.onclick=()=>{const nd=structuredClone(D),e=nd.exp.find(z=>z.t==x.dataset.x);if(!e||!confirm('Hapus pengeluaran "'+e.item+'"?'))return;nd.exp=nd.exp.filter(z=>z!==e);save(nd)});
@@ -227,7 +231,7 @@ async function unduh(){
   
   try{
    if(!window.XLSX)throw{code:'rejected_extension'};
-   const wb=XLSX.utils.book_new();[['Rekap Iuran',R],...(user?[['Pengeluaran',P],['Saldo',S],['Rekap Lama',[['Bulan','Masuk','Keluar','Saldo akhir'],...(D.lama||[])]]]:[])].forEach(([n,a])=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(a),n));
+   const wb=XLSX.utils.book_new();[['Rekap Iuran',R],...(user?[['Pengeluaran',P],['Saldo',S],['Rekap Lama',[['Bulan','Masuk','Keluar','Saldo akhir'],...norm({lama:D.lama||[]}).lama.map(r=>[r.b,r.m,r.k,r.s])]]]:[])].forEach(([n,a])=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(a),n));
    simpan('rekap-iuran-'+d+'.xlsx',XLSX.write(wb,{type:'array',bookType:'xlsx'}));
   }catch(e){
    if(e&&(e.code=='rejected_extension'||e.code=='extension_not_enabled')){simpan('rekap-iuran-'+d+'.csv',csv(R))}else throw e;
